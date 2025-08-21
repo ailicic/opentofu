@@ -57,9 +57,14 @@ jobs:
           tofu fmt -check
           tofu validate
 
+      # - name: Plan
+      #   run: |
+      #     tofu plan -out plan.tfplan
+      
+      # needs to be refactored since we will have multiple folders like /kubernetes /mash etc..
       - name: Plan
-        run: |
-          tofu plan -out plan.tfplan
+        working-directory: azure
+        run: tofu plan -out plan.tfplan
 
       # Use environments/approvals for production; auto-apply here for demo
       - name: Apply
