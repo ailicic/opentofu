@@ -1,0 +1,68 @@
+name: Infra AKS
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "**/*.tf"
+      - ".github/workflows/infra-aks.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # required for OIDC
+  contents: read
+
+env:
+  ARM_USE_OIDC: "true"
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  plan-and-apply:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Tofu version
+        run: tofu version
+
+      # Optional: select working directory if your TF is not at repo root
+      # - working-directory: ./opentofu/azure
+
+      - name: Init (remote state)
+        run: |
+          tofu init \
+            -backend-config="resource_group_name=<rg-for-tfstate>" \
+            -backend-config="storage_account_name=<storage-account-name>" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=aks/aks-dev.tfstate" \
+            -backend-config="access_key=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}"
+
+      - name: Validate
+        run: |
+          tofu fmt -check
+          tofu validate
+
+      - name: Plan
+        run: |
+          tofu plan -var-file="env/dev.tfvars" -out plan.tfplan
+
+      # Use environments/approvals for production; auto-apply here for demo
+      - name: Apply
+        if: github.ref == 'refs/heads/main'
+        run: |
+          tofu apply -auto-approve plan.tfplan
