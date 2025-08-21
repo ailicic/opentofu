@@ -46,8 +46,8 @@ jobs:
       - name: Init (remote state)
         run: |
           tofu init \
-            -backend-config="resource_group_name=<rg-for-tfstate>" \
-            -backend-config="storage_account_name=<storage-account-name>" \
+            -backend-config="resource_group_name=rgailicictfstate" \
+            -backend-config="storage_account_name=rg-Aleksandar-Ilicic" \
             -backend-config="container_name=tfstate" \
             -backend-config="key=aks/aks-dev.tfstate" \
             -backend-config="access_key=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}"
@@ -59,7 +59,7 @@ jobs:
 
       - name: Plan
         run: |
-          tofu plan -var-file="env/dev.tfvars" -out plan.tfplan
+          tofu plan -out plan.tfplan
 
       # Use environments/approvals for production; auto-apply here for demo
       - name: Apply
