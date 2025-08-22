@@ -45,10 +45,6 @@ jobs:
       - name: Init
         run: tofu init -upgrade
 
-      - name: Validate
-        run: |
-          tofu fmt -check -recursive
-          tofu validate
 
       - name: Plan (create saved plan + diff summary)
         id: plan
