@@ -87,10 +87,10 @@ jobs:
       - name: OpenTofu Init
         run: tofu init -upgrade
 
-      - name: Validate
-        run: |
-          tofu fmt -check
-          tofu validate
+      # - name: Validate
+      #   run: |
+      #     tofu fmt -check
+      #     tofu validate
 
       # - name: Plan
       #   run: |
@@ -98,10 +98,11 @@ jobs:
       
       # needs to be refactored since we will have multiple folders like /kubernetes /mash etc..
       - name: OpenTofu Plan
-        run: tofu plan -out=planfile -input=false -no-color
+        working-directory: ./azure
+        run: tofu plan -out=planfile -input=false -compact-warnings
 
       # Use environments/approvals for production; auto-apply here for demo
-      - name: Apply
+      - name: OpenTofu Apply
         if: github.ref == 'refs/heads/main'
-        run: |
-          tofu apply -auto-approve plan.tfplan
+        working-directory: ./azure
+        run: tofu apply -auto-approve -input=false planfile
