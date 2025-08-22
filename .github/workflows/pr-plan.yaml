@@ -3,12 +3,15 @@ name: PR Plan
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths:
+      - "**/*.tf"
+      - "**/*.tfvars"
+      - ".github/workflows/pr-plan.yml"
 
 permissions:
   id-token: write           # OIDC for Azure
   contents: read
   pull-requests: write      # so we can comment
-  actions: read             # (optional) not needed here, but fine
 
 env:
   ARM_USE_OIDC: "true"
@@ -23,7 +26,7 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: ./azure
+        working-directory: ./azure   # adjust if your .tf files move
 
     steps:
       - name: Checkout
@@ -42,46 +45,42 @@ jobs:
       - name: Init
         run: tofu init -upgrade
 
-      - name: Format (auto-fix)
-        run: tofu fmt -recursive
-
       - name: Validate
-        run: tofu validate
+        run: |
+          tofu fmt -check -recursive
+          tofu validate
 
-      - name: Plan (produce saved plan)
+      - name: Plan (create saved plan + diff summary)
         id: plan
         run: |
           set -e
-          tofu plan -out=plan.tfplan -input=false -compact-warnings
-          # Create a small JSON summary for the PR comment
-          tofu show -json plan.tfplan > plan.json
-          jq -r '
+          tofu plan -refresh=true -out=plan.tfplan -input=false -compact-warnings
+          # Parse changes into diff-like output
+          tofu show -json plan.tfplan | jq -r '
             .resource_changes
-            | (map(.change.actions) | flatten) as $a
-            | {
-                creates: ($a | map(select(.=="create")) | length),
-                updates: ($a | map(select(.=="update")) | length),
-                deletes: ($a | map(select(.=="delete")) | length)
-              }
-          ' plan.json > counts.json
-          # Build a markdown comment (top 20 changed resources)
+            | map(select(.change.actions != []))
+            | map({addr: .address, act: ( .change.actions | join("/") )})
+            | .[]
+            | "\(.act) \(.addr)"
+          ' > changes.txt || true
+
           {
-            echo "### OpenTofu Plan Summary"
+            echo "### OpenTofu Plan Preview"
             echo
-            echo "\`adds\` **$(jq -r .creates counts.json)**  |  \`updates\` **$(jq -r .updates counts.json)**  |  \`deletes\` **$(jq -r .deletes counts.json)**"
-            echo
-            echo "<details><summary>Changed resources (top 20)</summary>"
-            echo
-            jq -r '
-              .resource_changes
-              | map({addr: .address, act: ( .change.actions | join("/") )})
-              | .[:20]
-              | (["Action","Address"], ["-----","-------"]),
-                (map([.act, .addr])[])
-              | @tsv
-            ' plan.json | awk 'BEGIN{print ""; print "| Action | Address |"; print "|---|---|"} {printf("| `%s` | `%s` |\n",$1,$2)}'
-            echo
-            echo "</details>"
+            if [ -s changes.txt ]; then
+              echo "\`\`\`diff"
+              while read -r line; do
+                case "$line" in
+                  create*) echo "+ $line" ;;
+                  update*) echo "~ $line" ;;
+                  delete*) echo "- $line" ;;
+                  *) echo "  $line" ;;
+                esac
+              done < changes.txt
+              echo "\`\`\`"
+            else
+              echo "✅ No changes"
+            fi
           } > ../pr_comment.md
 
       - name: Comment on PR
@@ -91,9 +90,8 @@ jobs:
             const fs = require('fs');
             const body = fs.readFileSync('pr_comment.md', 'utf8');
             const {owner, repo, number} = context.issue;
-            // Upsert: if bot already commented, update it; otherwise create
             const comments = await github.rest.issues.listComments({owner, repo, issue_number: number});
-            const mine = comments.data.find(c => c.user.type === 'Bot' && c.body && c.body.includes('OpenTofu Plan Summary'));
+            const mine = comments.data.find(c => c.user.type === 'Bot' && c.body && c.body.includes('OpenTofu Plan Preview'));
             if (mine) {
               await github.rest.issues.updateComment({owner, repo, comment_id: mine.id, body});
             } else {
@@ -106,7 +104,4 @@ jobs:
           name: plan-${{ github.event.pull_request.number }}
           path: |
             azure/plan.tfplan
-            azure/plan.json
-            azure/counts.json
-          if-no-files-found: error
           retention-days: 14
