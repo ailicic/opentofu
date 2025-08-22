@@ -20,57 +20,94 @@ env:
   TF_IN_AUTOMATION: "true"
 
 jobs:
-  plan-and-apply:
+  opentofu:
+    name: 'OpenTofu Common'
     runs-on: ubuntu-latest
+
+    # Use the Bash shell regardless whether the GitHub Actions runner is ubuntu-latest, macos-latest, or windows-latest
     defaults:
       run:
         shell: bash
         working-directory: azure
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    # Checkout the repository to the GitHub Actions runner
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+    # Install the latest version of OpenTofu CLI and configure the OpenTofu CLI configuration file with a OpenTofu Cloud user API token
+    - name: Setup OpenTofu
+      uses: opentofu/setup-opentofu@v1
+      with:
+        tofu_version: 1.9.0
+        tofu_wrapper: false
 
-      - name: Set up OpenTofu
-        uses: opentofu/setup-opentofu@v1
+    # Initialize a new or existing OpenTofu working directory by creating initial files, loading any remote state, downloading modules, etc.
+    - name: OpenTofu Init
+      run: tofu init -upgrade
 
-      - name: Tofu version
-        run: tofu version
+    # Generates an execution plan for OpenTofu
+    - name: OpenTofu Plan
+      run: tofu plan -out=planfile -input=false -no-color
 
-      # Optional: select working directory if your TF is not at repo root
+      # On push to master, build or change infrastructure according to OpenTofu configuration files
+      # Note: It is recommended to set up a required "strict" status check in your repository for "OpenTofu Cloud". See the documentation on "strict" required status checks for more information: https://help.github.com/en/github/administering-a-repository/types-of-required-status-checks
+    - name: OpenTofu Apply
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: tofu apply -auto-approve -input=false planfile 
+
+# jobs:
+#   plan-and-apply:
+#     runs-on: ubuntu-latest
+#     defaults:
+#       run:
+#         shell: bash
+#         working-directory: azure
+
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
+
+#       - name: Azure login (OIDC)
+#         uses: azure/login@v2
+#         with:
+#           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+#           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+#           client-id: ${{ secrets.AZURE_CLIENT_ID }}
+
+#       - name: Set up OpenTofu
+#         uses: opentofu/setup-opentofu@v1
+
+#       - name: Tofu version
+#         run: tofu version
+
+#       # Optional: select working directory if your TF is not at repo root
       
 
-      - name: Init (remote state)
-        run: |
-          tofu init \
-            -backend-config="resource_group_name=rgailicictfstate" \
-            -backend-config="storage_account_name=rg-Aleksandar-Ilicic" \
-            -backend-config="container_name=tfstate" \
-            -backend-config="key=aks/aks-dev.tfstate" \
-            -backend-config="access_key=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}"
+#       - name: Init (remote state)
+#         run: |
+#           tofu init \
+#             -backend-config="resource_group_name=rgailicictfstate" \
+#             -backend-config="storage_account_name=rg-Aleksandar-Ilicic" \
+#             -backend-config="container_name=tfstate" \
+#             -backend-config="key=aks/aks-dev.tfstate" \
+#             -backend-config="access_key=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}"
 
-      - name: Validate
-        run: |
-          tofu fmt -check
-          tofu validate
+#       - name: Validate
+#         run: |
+#           tofu fmt -check
+#           tofu validate
 
-      # - name: Plan
-      #   run: |
-      #     tofu plan -out plan.tfplan
+#       # - name: Plan
+#       #   run: |
+#       #     tofu plan -out plan.tfplan
       
-      # needs to be refactored since we will have multiple folders like /kubernetes /mash etc..
-      - name: OpenTofu Plan
-        run: tofu plan -out=planfile -input=false -no-color
+#       # needs to be refactored since we will have multiple folders like /kubernetes /mash etc..
+#       - name: OpenTofu Plan
+#         run: tofu plan -out=planfile -input=false -no-color
 
-      # Use environments/approvals for production; auto-apply here for demo
-      - name: Apply
-        if: github.ref == 'refs/heads/main'
-        run: |
-          tofu apply -auto-approve plan.tfplan
+#       # Use environments/approvals for production; auto-apply here for demo
+#       - name: Apply
+#         if: github.ref == 'refs/heads/main'
+#         run: |
+#           tofu apply -auto-approve plan.tfplan
