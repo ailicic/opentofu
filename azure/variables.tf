@@ -37,7 +37,7 @@ variable "aks" {
     user_node_pool = {
       vm_size   = "Standard_B2s_v2"
       min_count = 1
-      max_count = 1
+      max_count = 2
     }
 
     version = {
