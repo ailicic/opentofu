@@ -16,12 +16,12 @@ resource "azurerm_subnet" "aks" {
   virtual_network_name = azurerm_virtual_network.aks.name
   address_prefixes     = ["10.0.1.0/24"]
 
-#   delegation {
-#     name = "delegation"
+  #   delegation {
+  #     name = "delegation"
 
-#     service_delegation {
-#       name    = "Microsoft.ContainerInstance/containerGroups"
-#       actions = ["Microsoft.Network/virtualNetworks/subnets/join/action", "Microsoft.Network/virtualNetworks/subnets/prepareNetworkPolicies/action"]
-#     }
-#   }
+  #     service_delegation {
+  #       name    = "Microsoft.ContainerInstance/containerGroups"
+  #       actions = ["Microsoft.Network/virtualNetworks/subnets/join/action", "Microsoft.Network/virtualNetworks/subnets/prepareNetworkPolicies/action"]
+  #     }
+  #   }
 }

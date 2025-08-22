@@ -1,9 +1,9 @@
 resource "azurerm_kubernetes_cluster" "main" {
-  location                          = data.azurerm_resource_group.rg.location
-  name                              = "aks-cluster-01"
-  resource_group_name               = data.azurerm_resource_group.rg.name
-  node_resource_group               = "aks-resources"
-  dns_prefix                        = "kubernetes"
+  location            = data.azurerm_resource_group.rg.location
+  name                = "aks-cluster-01"
+  resource_group_name = data.azurerm_resource_group.rg.name
+  node_resource_group = "aks-resources"
+  dns_prefix          = "kubernetes"
   #tags                              = local.tags
   kubernetes_version                = var.aks.version.control_plane
   role_based_access_control_enabled = true
