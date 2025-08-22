@@ -1,0 +1,93 @@
+name: Apply From PR Plan
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read   # required to download artifacts via GH API
+
+env:
+  ARM_USE_OIDC: "true"
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./azure
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Derive PR number from merge commit
+        id: pr
+        run: |
+          msg="$(git log -1 --pretty=%B)"
+          echo "Commit message: $msg"
+          # Typical merge message: "Merge pull request #123 from ..."
+          prnum=$(sed -n 's/.*#\([0-9][0-9]*\).*/\1/p' <<< "$msg" | head -n1)
+          if [ -z "$prnum" ]; then
+            echo "No PR number found in commit message. Exiting."
+            exit 1
+          fi
+          echo "prnum=$prnum" >> $GITHUB_OUTPUT
+
+      - name: Install GitHub CLI + jq + unzip
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq unzip
+          type -p gh || sudo apt-get install -y gh
+
+      - name: Download plan artifact for PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prnum="${{ steps.pr.outputs.prnum }}"
+          # Find the newest artifact with name "plan-<PR>"
+          aid=$(gh api repos/${{ github.repository }}/actions/artifacts --paginate \
+            | jq -r --arg NAME "plan-$prnum" '
+                .artifacts // [] | map(select(.name==$NAME and .expired==false)) | sort_by(.updated_at) | last | .id
+              ')
+          if [ "$aid" = "null" ] || [ -z "$aid" ]; then
+            echo "Plan artifact for PR #$prnum not found (maybe expired or never uploaded)."
+            exit 1
+          fi
+          echo "Found artifact id: $aid"
+          gh api -H "Accept: application/vnd.github+json" \
+            repos/${{ github.repository }}/actions/artifacts/$aid/zip > /tmp/plan.zip
+          unzip -o /tmp/plan.zip -d .
+          ls -la
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Init
+        run: tofu init -upgrade
+
+      - name: Safety check (show plan summary we’re about to apply)
+        run: |
+          test -f plan.tfplan || (echo "Missing plan.tfplan"; exit 1)
+          tofu show -json plan.tfplan | jq -r '
+            .resource_changes
+            | (map(.change.actions) | flatten) as $a
+            | "Applying -> Adds: \(( $a | map(select(.=="create")) | length))  Updates: \(( $a | map(select(.=="update")) | length))  Deletes: \(( $a | map(select(.=="delete")) | length))"
+          '
+
+      - name: Apply saved plan
+        run: tofu apply -auto-approve -input=false plan.tfplan
