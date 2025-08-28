@@ -1,19 +1,19 @@
 terraform {
   required_providers {
     azurerm = {
-      source = "hashicorp/azurerm"
+      source  = "hashicorp/azurerm"
       version = "4.40.0"
     }
   }
 }
 
 provider "azurerm" {
-  features{}
+  features {}
 
   # subscription_id = var.subscription_id
   # tenant_id       = var.tenant_id
-#   client_id       = "<service-principal-client-id>"
-#   client_secret   = "<service-principal-secret>"
+  #   client_id       = "<service-principal-client-id>"
+  #   client_secret   = "<service-principal-secret>"
 }
 
 
