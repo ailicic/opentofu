@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write   # required for OIDC
+  id-token: write
   contents: read
 
 env:
@@ -19,45 +19,8 @@ env:
   ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   TF_IN_AUTOMATION: "true"
 
-# jobs:
-#   opentofu:
-#     name: 'OpenTofu Common'
-#     runs-on: ubuntu-latest
-
-#     # Use the Bash shell regardless whether the GitHub Actions runner is ubuntu-latest, macos-latest, or windows-latest
-#     defaults:
-#       run:
-#         shell: bash
-#         working-directory: azure
-
-#     steps:
-#     # Checkout the repository to the GitHub Actions runner
-#     - name: Checkout
-#       uses: actions/checkout@v4
-
-#     # Install the latest version of OpenTofu CLI and configure the OpenTofu CLI configuration file with a OpenTofu Cloud user API token
-#     - name: Setup OpenTofu
-#       uses: opentofu/setup-opentofu@v1
-#       with:
-#         tofu_version: 1.9.0
-#         tofu_wrapper: false
-
-#     # Initialize a new or existing OpenTofu working directory by creating initial files, loading any remote state, downloading modules, etc.
-#     - name: OpenTofu Init
-#       run: tofu init -upgrade
-
-#     # Generates an execution plan for OpenTofu
-#     - name: OpenTofu Plan
-#       run: tofu plan -out=planfile -input=false -no-color
-
-#       # On push to master, build or change infrastructure according to OpenTofu configuration files
-#       # Note: It is recommended to set up a required "strict" status check in your repository for "OpenTofu Cloud". See the documentation on "strict" required status checks for more information: https://help.github.com/en/github/administering-a-repository/types-of-required-status-checks
-#     - name: OpenTofu Apply
-#       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-#       run: tofu apply -auto-approve -input=false planfile 
-
 jobs:
-  plan-and-apply:
+  plan:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -78,31 +41,50 @@ jobs:
       - name: Set up OpenTofu
         uses: opentofu/setup-opentofu@v1
 
-      - name: Tofu version
-        run: tofu version
-
-      # Optional: select working directory if your TF is not at repo root
-      
-
-      - name: OpenTofu Init
+      - name: Init
         run: tofu init -upgrade
 
-      # - name: Validate
-      #   run: |
-      #     tofu fmt -check
-      #     tofu validate
+      - name: Plan
+        run: tofu plan -out=plan.tfplan -input=false -compact-warnings
 
-      # - name: Plan
-      #   run: |
-      #     tofu plan -out plan.tfplan
-      
-      # needs to be refactored since we will have multiple folders like /kubernetes /mash etc..
-      - name: OpenTofu Plan
-        working-directory: ./azure
-        run: tofu plan -out=planfile -input=false -compact-warnings
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plan-${{ github.sha }}
+          path: azure/plan.tfplan
+          retention-days: 7
 
-      # Use environments/approvals for production; auto-apply here for demo
-      - name: OpenTofu Apply
-        if: github.ref == 'refs/heads/main'
-        working-directory: ./azure
-        run: tofu apply -auto-approve -input=false planfile
+  apply:
+    runs-on: ubuntu-latest
+    needs: plan
+    environment: production   # 🔑 requires manual approval before running
+    defaults:
+      run:
+        shell: bash
+        working-directory: azure
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Init
+        run: tofu init -upgrade
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: plan-${{ github.sha }}
+          path: azure
+
+      - name: Apply
+        run: tofu apply -auto-approve -input=false plan.tfplan
