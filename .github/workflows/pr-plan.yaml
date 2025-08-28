@@ -7,6 +7,8 @@ on:
       - "**/*.tf"
       - "**/*.tfvars"
       - ".github/workflows/pr-plan.yml"
+      - ".github/workflows/infra-aks.yml"
+      - ".github/workflows/infra-aks.yml"
 
 permissions:
   id-token: write           # OIDC for Azure
